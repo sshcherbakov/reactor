@@ -381,4 +381,8 @@ public class Future<T> implements Supplier<T> {
 		c.notifyError(t);
 		c.decreaseAcceptLength();
 	}
+	
+	protected final void resetAcceptedCount() {
+		acceptedCount = 0L;
+	}
 }

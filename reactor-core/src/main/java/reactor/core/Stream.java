@@ -16,6 +16,14 @@
 
 package reactor.core;
 
+import static reactor.fn.Functions.$;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 import reactor.fn.Consumer;
 import reactor.fn.Event;
 import reactor.fn.Function;
@@ -24,14 +32,6 @@ import reactor.fn.dispatch.Dispatcher;
 import reactor.fn.selector.Selector;
 import reactor.fn.support.Reduce;
 import reactor.util.Assert;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static reactor.fn.Functions.$;
 
 /**
  * A {@literal Stream} may be triggered several times, e.g. by processing a collection,
@@ -122,6 +122,14 @@ public class Stream<T> extends Composable<T> {
 		});
 		return c;
 	}
+	
+	public void complete() {
+		synchronized (monitor) {
+			Event<T> ev = Event.wrap(getValue());
+			monitor.notifyAll();
+			notifyLast(ev);
+		}
+	}
 
 	/**
 	 * Accumulate a result until expected accept count has been reached - If this limit hasn't been set, each accumulated
@@ -133,7 +141,7 @@ public class Stream<T> extends Composable<T> {
 	 * @param <V>     The type of the object returned by reactor reply.
 	 * @return The new {@link Stream}.
 	 */
-	public <V> Stream<V> reduce(final Function<Reduce<T, V>, V> fn, V initial) {
+	public <V> Stream<V> reduce(final Function<Reduce<T, V>, V> fn, final V initial) {
 		Assert.notNull(fn);
 		final AtomicReference<V> lastValue = new AtomicReference<V>(initial);
 		final Stream<V> c = (Stream<V>) this.assignComposable(getObservable());
@@ -143,11 +151,14 @@ public class Stream<T> extends Composable<T> {
 			_expectedAcceptCount = getExpectedAcceptCount();
 		}
 
-		c.setExpectedAcceptCount(_expectedAcceptCount < 0 ? _expectedAcceptCount : 1);
+		c.setExpectedAcceptCount(_expectedAcceptCount < 0 ? _expectedAcceptCount : Long.MAX_VALUE);
 		when(lastSelector, new Consumer<T>() {
+			@SuppressWarnings("unchecked")
 			@Override
 			public void accept(T t) {
 				c.accept(lastValue.get());
+				lastValue.set((V) (initial == null ? null : new ArrayList<T>()));
+				resetAcceptedCount();
 			}
 		});
 
